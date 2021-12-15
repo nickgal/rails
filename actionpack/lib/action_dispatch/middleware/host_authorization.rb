@@ -18,6 +18,16 @@ module ActionDispatch
   class HostAuthorization
     ALLOWED_HOSTS_IN_DEVELOPMENT = [".localhost", IPAddr.new("0.0.0.0/0"), IPAddr.new("::/0")]
     PORT_REGEX = /(?::\d+)?/.freeze
+    IPV6_HOSTNAME = /(?<host>[a-f0-9]*:[a-f0-9.:]+)/i
+    IPV4_HOSTNAME = /(?<host>\d+.\d+.\d+.\d+)/i
+    IPV4_HOSTNAME_WITH_PORT = /\A#{IPV4_HOSTNAME}#{PORT_REGEX}?\z/
+    IPV6_HOSTNAME_WITH_PORT = /\A\[#{IPV6_HOSTNAME}\]#{PORT_REGEX}?\z/
+    VALID_IP_HOSTNAME = Regexp.union(
+      /\A#{IPV4_HOSTNAME}\z/,
+      /\A#{IPV6_HOSTNAME}\z/,
+      IPV4_HOSTNAME_WITH_PORT,
+      IPV6_HOSTNAME_WITH_PORT
+    )
 
     class Permissions # :nodoc:
       def initialize(hosts)
@@ -30,11 +40,17 @@ module ActionDispatch
 
       def allows?(host)
         @hosts.any? do |allowed|
-          allowed === host
-        rescue
-          # IPAddr#=== raises an error if you give it a hostname instead of
-          # IP. Treat similar errors as blocked access.
-          false
+          if allowed.is_a?(IPAddr)
+            begin
+              allowed === extract_hostname(host)
+            rescue
+              # IPAddr#=== raises an error if you give it a hostname instead of
+              # IP. Treat similar errors as blocked access.
+              false
+            end
+          else
+            allowed === host
+          end
         end
       end
 
@@ -59,6 +75,10 @@ module ActionDispatch
           else
             /\A#{Regexp.escape host}#{PORT_REGEX}\z/i
           end
+        end
+
+        def extract_hostname(host)
+          host.slice(VALID_IP_HOSTNAME, "host") || host
         end
     end
 
